@@ -38,7 +38,16 @@ public class TiebaPageProcessor implements PageProcessor {
 		site.setUserAgent(
 				"Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.63 Safari/537.36")
 				// .enableHttpProxyPool()
-				.addHeader("Referer", "http://www.baidu.com").setTimeOut(15000).setRetryTimes(3).setSleepTime(this.sleepTime);
+				.addHeader("Referer", "http://www.baidu.com").setTimeOut(15000).setRetryTimes(3)
+				.setSleepTime(this.sleepTime)
+				.addCookie("tieba.baidu.com", "TIEBAUID", "52dc7439f3e72559bb48a912")
+				.addCookie("tieba.baidu.com", "TIEBA_USERTYPE", "fcf922b15b80e609daefdb56")
+				.addCookie("tieba.baidu.com", "bdshare_firstime", "1413434482309")
+				.addCookie("tieba.baidu.com", "dasense_show_10172", "1")
+				.addCookie("tieba.baidu.com", "dasense_show_10495", "1")
+				.addCookie("tieba.baidu.com", "fuwu_center_bubble", "1").addCookie("tieba.baidu.com", "rpln_guide", "1")
+				.addCookie("tieba.baidu.com", "wanleTipCircle", "1415277415883")
+				.addCookie("tieba.baidu.com", "zt2meizhi", "");
 				site.setDomain(this.domain);
 		return site;
 	}
@@ -67,13 +76,14 @@ public class TiebaPageProcessor implements PageProcessor {
 		totalFloors += floorList.size();
 		String allContent = StringUtils.join(floorList, "\n");
 		List<String> allRepeatTime = html.$(".l_post_bright","data-field").regex("date\":\"([\\w\\- :]{16})").all();
-		String lastRepeatTime = null;
+		String lastRepeatTime;
+		int currentPage = 1;
 		if (allRepeatTime.size() > 1) {
 			lastRepeatTime = allRepeatTime.get(allRepeatTime.size() - 1);
 			int pageTotalInt = Integer.valueOf(pageTotal);
 			if (pageTotalInt > 1) {
-				for (int i = 1; i < pageTotalInt; i++) {
-					String pageUrl = thisUrl + "?pn=" + String.valueOf(i + 1);
+				while (currentPage <= pageTotalInt) {
+					String pageUrl = thisUrl + "?pn=" + String.valueOf(currentPage + 1);
 					HttpClientDownloader downloader = new HttpClientDownloader();
 					Page pagePage = downloader.download(new Request(pageUrl), this.getSite().toTask());
 					Html pageHtml = pagePage.getHtml();
@@ -94,8 +104,13 @@ public class TiebaPageProcessor implements PageProcessor {
 						System.out.println("date:" + string);
 					}
 					totalFloors += pageFloor.size();
+					
+					pageTotalInt = Integer.valueOf(html.$(".l_posts_num:eq(0) .l_reply_num span.red:eq(1)","text").get());
+					currentPage ++;
 				}
 			}
+		}else{
+			lastRepeatTime = publicTime;
 		}
 
 		System.out.println(title + "\n");
