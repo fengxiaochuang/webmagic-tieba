@@ -11,6 +11,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.PropertyConfigurator;
 
 import cc.leiju.ljyq.crawler.extension.PrintTiebaPipeline;
+import cc.leiju.ljyq.crawler.extension.SaveTiebaToDbPipeline;
+import gf.common.gsf.utils.Decript;
 import us.codecraft.webmagic.Page;
 import us.codecraft.webmagic.Request;
 import us.codecraft.webmagic.Site;
@@ -18,7 +20,6 @@ import us.codecraft.webmagic.Spider;
 import us.codecraft.webmagic.downloader.HttpClientDownloader;
 import us.codecraft.webmagic.processor.PageProcessor;
 import us.codecraft.webmagic.scheduler.QueueScheduler;
-import us.codecraft.webmagic.scheduler.component.BloomFilterDuplicateRemover;
 import us.codecraft.webmagic.selector.Html;
 import us.codecraft.webmagic.utils.UrlUtils;
 
@@ -61,7 +62,7 @@ public class TiebaPageProcessor implements PageProcessor {
 		String handleString = page.getHtml().replace("<!--", "").replace("-->", "").get();
 		Html html = new Html(handleString);
 		List<String> tieList = html.$(".j_thread_list:not(.thread_top)").all();
-		System.out.println(tieList.size());
+		// System.out.println(tieList.size());
 		if (tieList.size() > 0) {
 			// add url
 			boolean addNextPage = false;
@@ -70,9 +71,6 @@ public class TiebaPageProcessor implements PageProcessor {
 				String tieTime = tieHtml.$(".threadlist_reply_date.j_reply_data", "text").regex("\\d{2}:\\d{2}").get();
 				if (tieTime != null) {
 					addNextPage = true;
-					// threadlist_title pull_left j_th_tit
-					// threadlist_title pull_left j_th_tit
-					// threadlist_text threadlist_title j_th_tit
 					String url = tieHtml.$(".threadlist_title.j_th_tit").links().get();
 					page.addTargetRequest(url);
 					// System.out.println(tieTime);
@@ -80,7 +78,7 @@ public class TiebaPageProcessor implements PageProcessor {
 				} else {
 					// 如果不满足添加时间的要求,则不添加下一页
 					addNextPage = false;
-					System.out.println("no has time");
+					// System.out.println("no has time");
 				}
 			}
 			if (addNextPage) {
@@ -104,25 +102,30 @@ public class TiebaPageProcessor implements PageProcessor {
 			String title = html.$(".core_title_txt", "text").get();
 			String oneContent = html.$(".d_post_content_firstfloor cc div", "text").get();
 			// class="l_post l_post_bright j_l_post clearfix "
-			List<String> getTime = html.$(".l_post.j_l_post.l_post_bright").regex("\\\"tail-info\\\">(\\d{4}-\\d{1,2}-\\d{1,2}\\s\\d{1,2}:\\d{1,2})<\\/span>").all();
+			List<String> getTime = html.$(".l_post.j_l_post.l_post_bright")
+					.regex("\\\"tail-info\\\">(\\d{4}-\\d{1,2}-\\d{1,2}\\s\\d{1,2}:\\d{1,2})<\\/span>").all();
+			
+			String source = html.$(".card_title_fname","text").get();
+			
 			List<String> allRepeatTime;
 			if (getTime.size() > 0) {
 				allRepeatTime = getTime;
 			} else {
 				allRepeatTime = html.$(".l_post_bright", "data-field").regex("date\":\"([\\w\\- :]{16})").all();
 			}
-			String publicTime = "";
+			String publicTime;
 			if (allRepeatTime.size() > 0) {
 				publicTime = allRepeatTime.get(0);
-			}else{
+			} else {
 				page.setSkip(true);
+				return;
 			}
 			// String publicTime =
 			// html.$(".l_post.j_l_post.l_post_bright","data-field").regex("date\":\"([\\w\\-
 			// :]{16})").get();
 			String pageTotal = html.$(".l_posts_num:eq(0) .l_reply_num span.red:eq(1)", "text").get();
-			String author = html.$(".louzhubiaoshi.j_louzhubiaoshi","author").get();
-			
+			String author = html.$(".louzhubiaoshi.j_louzhubiaoshi", "author").get();
+
 			int totalFloors = 0;
 
 			List<String> floorList = html.$(".d_post_content_main cc div ", "text").all();
@@ -147,10 +150,15 @@ public class TiebaPageProcessor implements PageProcessor {
 						// 分页里面的楼层内容
 						List<String> pageFloor = pageHtml.$(".d_post_content_main cc div", "text").all();
 						allContent += StringUtils.join(pageFloor, "\n");
+						// 子回复里面的内容
+						List<String> chrildFloor = pageHtml.$(".lzl_single_post .lzl_content_main", "text").all();
+						allContent += StringUtils.join(chrildFloor, "\n");
 
 						// 分页里面的page
 						List<String> pageRepeatTime;
-						List<String> pageGetTime = pageHtml.$(".l_post.j_l_post.l_post_bright").regex("\\\"tail-info\\\">(\\d{4}-\\d{1,2}-\\d{1,2}\\s\\d{1,2}:\\d{1,2})<\\/span>").all();
+						List<String> pageGetTime = pageHtml.$(".l_post.j_l_post.l_post_bright")
+								.regex("\\\"tail-info\\\">(\\d{4}-\\d{1,2}-\\d{1,2}\\s\\d{1,2}:\\d{1,2})<\\/span>")
+								.all();
 						if (pageGetTime.size() > 0) {
 							pageRepeatTime = pageGetTime;
 						} else {
@@ -160,8 +168,9 @@ public class TiebaPageProcessor implements PageProcessor {
 						if (pageRepeatTime.size() > 0) {
 							lastRepeatTime = pageRepeatTime.get(pageRepeatTime.size() - 1);
 						}
-						totalFloors += pageFloor.size();
-						pageTotalInt = Integer.valueOf(html.$(".l_posts_num:eq(0) .l_reply_num span.red:eq(1)", "text").get());
+						totalFloors = totalFloors + pageFloor.size() + chrildFloor.size();
+						pageTotalInt = Integer
+								.valueOf(html.$(".l_posts_num:eq(0) .l_reply_num span.red:eq(1)", "text").get());
 						currentPage++;
 					}
 				}
@@ -169,13 +178,18 @@ public class TiebaPageProcessor implements PageProcessor {
 				lastRepeatTime = publicTime;
 			}
 
+			page.putField("siteId", siteId);
 			page.putField("title", title);
+			page.putField("source", source);
 			page.putField("oneContent", oneContent);
 			page.putField("publishTime", publicTime);
 			page.putField("totalFloor", totalFloors);
 			page.putField("author", author);
 			page.putField("allContent", allContent);
 			page.putField("lastRepeatTime", lastRepeatTime);
+			String pageUrl = page.getUrl().get();
+			page.putField("url", pageUrl);
+			page.putField("urlmd5", Decript.MD5(pageUrl));
 
 			// System.out.println(title + "\n");
 			// System.out.println(oneContent + "\n");
@@ -190,9 +204,9 @@ public class TiebaPageProcessor implements PageProcessor {
 	}
 
 	public static void main(String[] args) {
-		 String startUrl = "http://tieba.baidu.com/p/4393036486";
-//		String startUrl = "http://tieba.baidu.com/p/4397682908";
-//		 String startUrl = "http://tieba.baidu.com/f?kw=手绘动漫";
+		// String startUrl = "http://tieba.baidu.com/p/4393036486";
+		// String startUrl = "http://tieba.baidu.com/p/4397682908";
+		String startUrl = "http://tieba.baidu.com/f?kw=好歌&fr=home&fp=0&ie=utf-8";
 		int siteId = 2;
 		int sleepTime = 3000;
 		int thread = 2;
@@ -201,9 +215,8 @@ public class TiebaPageProcessor implements PageProcessor {
 		String log4jConfPath = pageProcessor.getClass().getResource("/").getPath() + "log4j.properties";
 		PropertyConfigurator.configure(log4jConfPath);
 		Spider spider = Spider.create(pageProcessor).addUrl(startUrl)
-				.setScheduler(new QueueScheduler().setDuplicateRemover(new BloomFilterDuplicateRemover(10000)))
-				.addPipeline(new PrintTiebaPipeline())
-				.thread(thread);
+				.setScheduler(new QueueScheduler())
+				.addPipeline(new PrintTiebaPipeline()).addPipeline(new SaveTiebaToDbPipeline()).thread(thread);
 		spider.start();
 	}
 }
