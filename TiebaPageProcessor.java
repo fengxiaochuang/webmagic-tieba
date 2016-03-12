@@ -1,7 +1,7 @@
 /**
 * @author 冯晓闯 E-mail:lanxinxichen@126.com
 * @version 创建时间：2016年3月9日 上午11:58:52
-* 类说明:
+* 类说明:贴吧采集类 简单的用webmagic采集贴吧，不去重
 */
 package default.crawler;
 
